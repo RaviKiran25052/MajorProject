@@ -1,16 +1,16 @@
 import os
 import easyocr
 import pyttsx3
+import cv2
 from gtts import gTTS
 import speech_recognition as sr
 from langchain.llms import OpenAI
 import pytesseract as pytesseract
-# from PIL import Image
 from googletrans import Translator,LANGUAGES
 from langchain.prompts import PromptTemplate
 
-mykey = "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"
-model = OpenAI(temperature=0.5, openai_api_key=mykey)
+mykey = "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"
+model = OpenAI(temperature=0.5, openai_api_key=mykey, model="gpt-3.5-turbo-instruct")
 
 engine = pyttsx3.init()
 engine.runAndWait()
@@ -19,12 +19,11 @@ voices = engine.getProperty('voices')
 engine.setProperty('voice', voices[0].id)
 
 translator = Translator()
-reader = easyocr.Reader(['en', 'te'])
 pytesseract.pytesseract.tesseract_cmd = "C:\\Users\\Ravi\\AppData\\Local\\Tesseract-OCR\\tesseract.exe"
 
 def summarize(text, lang):
     prompt = PromptTemplate(
-        template = "give the text in {x} by summarizing the below text, within 50 words. text: {y}.",
+        template = "give the text in {x} by summarizing the below text, within 50 to 60 words. text: {y}.",
         # template = "summarize this text within 30 words which was in {x}. text: {y}.",
         input_variables = ["x", "y"]
     )
@@ -32,8 +31,50 @@ def summarize(text, lang):
     translated_text = model(prompt=query)    
     return translated_text
 
-def I2T():
-    img_path = "telugu.png"
+def identifyLang(img):
+    
+    percentages = []
+    codes = ['en','te','hi']
+
+    for code in codes:
+        reader = easyocr.Reader([code],gpu=False)
+        result = reader.readtext(img)
+
+        pb = 0
+        count = 0
+        for items in result:
+            _,_,score = items
+            pb += score
+            count +=1
+        percentages.append([code, pb/count])
+        # print(lang,percentages)
+        
+    max_pair = max(percentages, key=lambda x: x[1])
+    langCode = max_pair[0]
+    if langCode == 'en':
+        return [langCode]
+    else:
+        return ['en',langCode]
+
+def V2T():
+    camera=cv2.VideoCapture(0)
+
+    while True:
+        _,image=camera.read()
+        cv2.imshow('image',image)
+        if cv2.waitKey(1)& 0xFF==ord('s'):
+            cv2.imwrite('capture.png',image)
+            break
+    camera.release()
+    cv2.destroyAllWindows()
+    
+    I2T('capture.png')
+    
+def I2T(img_path):
+    
+    # langCodes = identifyLang(img_path)
+    # reader = easyocr.Reader([langCodes])
+    reader = easyocr.Reader(['en','hi'])
     result = reader.readtext(img_path)
     text = ' '.join([text[1] for text in result])
     print("The text was :\n" + text)
@@ -51,29 +92,30 @@ def I2T():
     
     if ch == 'y':
         text, lan = T2T(text, ex.lang)
+        print("\nTranslated text :\n",text)
         T2S(text, lan)
     elif ch == 'n':
         T2S(text, ex.lang)
 
 
 def T2S(text,lan):
-    print("\nTranslated text :\n",text)
     length = len(text.split())
-    print(f"\nThe text contains {length} words.")
-    engine.say(f"The text contains {length} words.")
-    engine.runAndWait()
-    engine.say("Do you want to Summarize : ")
-    engine.runAndWait()
-    ch = input("Do you want to Summarize : ")
-    print(lan)
-    if ch == 'y':
-        text = summarize(text, LANGUAGES[lan])
-        print("\nThe summarized text is : ",text)
+    if length > 50:
+        print(f"\nThe text contains {length} words.")
+        engine.say(f"The text contains {length} words.")
+        engine.runAndWait()
+        engine.say("Do you want to Summarize : ")
+        engine.runAndWait()
+        ch = input("Do you want to Summarize : ")
+        # print(lan)
+        if ch == 'y':
+            text = summarize(text, LANGUAGES[lan])
+            print("\nThe summarized text is : ",text)
     audio = gTTS(text=text, lang=lan, slow=False)
     engine.say('the audio was saved...!')
     engine.runAndWait()
     audio.save("example.mp3")
-    os.system("start example.mp3")
+    os.system("start example.mp3 tempo 1.5")
 
 
 def S2T():
@@ -131,7 +173,9 @@ def T2T(message, lang):
 def option(a):
     match a:
         case 'l' | 'L':
-            I2T()
+            I2T("hindi.png")
+        case 'v' | 'V':
+            V2T()
         case 's' | 'S':
             S2T()
         case 'e' | 'E':
@@ -142,7 +186,7 @@ def option(a):
 
 while 1:
     print("\n----------------------------------------------\n")
-    print("L -> Listen to the image\nS -> Send a message.\nE -> Escape\n")
+    print("L -> Listen to the image\nV -> Capture the image\nS -> Send a message.\nE -> Escape\n")
     opt = input('Enter your option : ')
     option(opt)
 engine.runAndWait()
